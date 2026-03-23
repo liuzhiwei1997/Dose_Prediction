@@ -175,30 +175,33 @@ def create_pretrained_unet(
         out_ch,
         list_ch_A, list_ch_B,
 ):
+    net = Model(in_ch,
+                out_ch,
+                list_ch_A, list_ch_B,
+                )
+
+    if not ckpt_file or not os.path.exists(ckpt_file):
+        print(f"Pretrained checkpoint not found, training from scratch: {ckpt_file}")
+        return net, tuple()
+
     trainer = NetworkTrainer()
     pretrain = trainer.init_trainer(
         ckpt_file=ckpt_file,
         list_GPU_ids=[0],
         only_network=True)
 
-    net = Model(in_ch,
-                out_ch,
-                list_ch_A, list_ch_B,
-                )
-
     net_dict = net.state_dict()
-    # pretrain['network_state_dict'] = {k.replace('module.', ''): v for k, v in pretrain['state_dict'].items()}
     missing = tuple({k for k in net_dict.keys() if k not in pretrain['network_state_dict']})
     print(f"missing in pretrained: {len(missing)}")
     inside = tuple({k for k in pretrain['network_state_dict'] if k in net_dict.keys()})
     print(f"inside pretrained: {len(inside)}")
     unused = tuple({k for k in pretrain['network_state_dict'] if k not in net_dict.keys()})
     print(f"unused pretrained: {len(unused)}")
-    # assert len(inside) > len(missing)
-    # assert len(inside) > len(unused)
 
-    pretrain['network_state_dict'] = {k: v for k, v in pretrain['network_state_dict'].items() if
-                                      (k in net_dict.keys()) and ('net_A' in k) or ('conv_out_A' in k)}
+    pretrain['network_state_dict'] = {
+        k: v for k, v in pretrain['network_state_dict'].items()
+        if ((k in net_dict.keys()) and ('net_A' in k)) or ('conv_out_A' in k)
+    }
     print(f"loaded weights: {len(tuple(pretrain['network_state_dict']))}")
     net.load_state_dict(pretrain['network_state_dict'], strict=False)
     return net, inside
