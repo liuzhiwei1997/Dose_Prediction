@@ -12,6 +12,8 @@ from monai.networks.blocks.unetr_block import UnetrBasicBlock, UnetrPrUpBlock, U
 from monai.utils import ensure_tuple_rep
 
 from OARSegmentation.Models.Nets.base_blocks import ModifiedUnetrUpBlock
+import os
+
 from NetworkTrainer.network_trainer import *
 from DosePrediction.Models.Networks.c3d import BaseUNet
 
@@ -373,12 +375,6 @@ def create_pretrained_unet(
         mode_multi_dec=True,
         multiS_conv=True,
 ):
-    trainer = NetworkTrainer()
-    pretrain = trainer.init_trainer(
-        ckpt_file=ckpt_file,
-        list_GPU_ids=[0],
-        only_network=True)
-
     net = Model(in_ch,
                 out_ch,
                 list_ch_A,
@@ -391,16 +387,23 @@ def create_pretrained_unet(
                 multiS_conv=multiS_conv,
                 )
 
+    if not ckpt_file or not os.path.exists(ckpt_file):
+        print(f"Pretrained checkpoint not found, training from scratch: {ckpt_file}")
+        return net, tuple()
+
+    trainer = NetworkTrainer()
+    pretrain = trainer.init_trainer(
+        ckpt_file=ckpt_file,
+        list_GPU_ids=[0],
+        only_network=True)
+
     net_dict = net.state_dict()
-    # pretrain['network_state_dict'] = {k.replace('module.', ''): v for k, v in pretrain['state_dict'].items()}
     missing = tuple({k for k in net_dict.keys() if k not in pretrain['network_state_dict']})
     print(f"missing in pretrained: {len(missing)}")
     inside = tuple({k for k in pretrain['network_state_dict'] if k in net_dict.keys()})
     print(f"inside pretrained: {len(inside)}")
     unused = tuple({k for k in pretrain['network_state_dict'] if k not in net_dict.keys()})
     print(f"unused pretrained: {len(unused)}")
-    # assert len(inside) > len(missing)
-    # assert len(inside) > len(unused)
 
     pretrain['network_state_dict'] = {k: v for k, v in pretrain['network_state_dict'].items() if k in net_dict.keys()}
     net.load_state_dict(pretrain['network_state_dict'], strict=False)
