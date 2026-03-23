@@ -1,4 +1,3 @@
-import importlib.util
 import os
 import gc
 from pathlib import Path
@@ -11,16 +10,12 @@ import pytorch_lightning as pl
 from pytorch_lightning.callbacks.model_checkpoint import ModelCheckpoint
 from pytorch_lightning.loggers import CSVLogger, MLFlowLogger
 
-if importlib.util.find_spec("bitsandbytes") is not None:
-    import bitsandbytes as bnb
-else:
-    bnb = None
-
 from DosePrediction.Models.Networks.dose_pyfer import *
 from DosePrediction.DataLoader.dataloader_OpenKBP_monai import get_dataset
 from DosePrediction.Evaluate.evaluate_openKBP import *
 from DosePrediction.Train.loss import GenLoss
 from DosePrediction.utils.runtime import (
+    get_bitsandbytes_module,
     get_lightning_accelerator,
     resolve_optional_checkpoint,
     resolve_output_dir,
@@ -106,7 +101,7 @@ class Pyfer(pl.LightningModule):
         self.lr = config_param["lr"]
         self.weight_decay = config_param["weight_decay"]
 
-        self.loss_function = GenLoss()
+        self.loss_function = GenLoss(im_size=config.IMAGE_SIZE)
         self.eps_train_loss = 0.01
 
         self.best_average_val_index = -99999999.
@@ -208,6 +203,7 @@ class Pyfer(pl.LightningModule):
         return {"log": tensorboard_logs}
 
     def configure_optimizers(self):
+        bnb = get_bitsandbytes_module()
         if use_bitsandbytes() and bnb is not None:
             optimizer = bnb.optim.Adam8bit(self.model_.parameters(), lr=self.lr,
                                            weight_decay=self.weight_decay)

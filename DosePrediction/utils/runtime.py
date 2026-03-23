@@ -2,7 +2,11 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from functools import lru_cache
 from typing import Optional, Tuple
+
+import importlib
+import warnings
 
 import torch
 
@@ -60,3 +64,18 @@ def use_pin_memory() -> bool:
 
 def use_bitsandbytes() -> bool:
     return os.environ.get("DOSE_PREDICTION_USE_BNB", "0") == "1"
+
+
+@lru_cache(maxsize=1)
+def get_bitsandbytes_module():
+    if not use_bitsandbytes():
+        return None
+
+    try:
+        return importlib.import_module("bitsandbytes")
+    except Exception as exc:  # pragma: no cover - optional dependency fallback
+        warnings.warn(
+            f"bitsandbytes is unavailable and will be disabled: {exc}",
+            RuntimeWarning,
+        )
+        return None
