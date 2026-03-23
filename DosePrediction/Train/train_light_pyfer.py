@@ -1,23 +1,30 @@
-import DosePrediction.Train.config as config
+import os
 import gc
+from pathlib import Path
 from typing import Optional
 
-
+import DosePrediction.Train.config as config
 from monai.data import DataLoader, list_data_collate
 
 import pytorch_lightning as pl
 from pytorch_lightning.callbacks.model_checkpoint import ModelCheckpoint
-from pytorch_lightning.loggers import MLFlowLogger
-
-import bitsandbytes as bnb
+from pytorch_lightning.loggers import CSVLogger, MLFlowLogger
 
 from DosePrediction.Models.Networks.dose_pyfer import *
 from DosePrediction.DataLoader.dataloader_OpenKBP_monai import get_dataset
 from DosePrediction.Evaluate.evaluate_openKBP import *
 from DosePrediction.Train.loss import GenLoss
+from DosePrediction.utils.runtime import (
+    get_bitsandbytes_module,
+    get_lightning_accelerator,
+    resolve_optional_checkpoint,
+    resolve_output_dir,
+    use_bitsandbytes,
+    use_pin_memory,
+)
 
 os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
-torch.backends.cudnn.benchmark = True
+torch.backends.cudnn.benchmark = torch.cuda.is_available()
 
 
 class OpenKBPDataModule(pl.LightningDataModule):
@@ -28,19 +35,19 @@ class OpenKBPDataModule(pl.LightningDataModule):
 
     def setup(self, stage: Optional[str] = None):
         # Assign train/val datasets for use in dataloaders
-        self.train_data = get_dataset(path=config.MAIN_PATH + config.TRAIN_DIR, state='train',
-                                      size=200, cache=True, crop_flag=False)
+        self.train_data = get_dataset(path=os.path.join(config.MAIN_PATH, config.TRAIN_DIR), state='train',
+                                      size=config.TRAIN_SIZE, cache=True, crop_flag=False)
 
-        self.val_data = get_dataset(path=config.MAIN_PATH + config.VAL_DIR, state='val',
-                                    size=100, cache=True)
+        self.val_data = get_dataset(path=os.path.join(config.MAIN_PATH, config.VAL_DIR), state='val',
+                                    size=config.VAL_SIZE, cache=True)
 
     def train_dataloader(self):
         return DataLoader(self.train_data, batch_size=config.BATCH_SIZE, shuffle=True,
-                          num_workers=config.NUM_WORKERS, collate_fn=list_data_collate, pin_memory=True)
+                          num_workers=config.NUM_WORKERS, collate_fn=list_data_collate, pin_memory=use_pin_memory())
 
     def val_dataloader(self):
         return DataLoader(self.val_data, batch_size=1, shuffle=False,
-                          num_workers=config.NUM_WORKERS, pin_memory=True)
+                          num_workers=config.NUM_WORKERS, pin_memory=use_pin_memory())
 
 
 class TestOpenKBPDataModule(pl.LightningDataModule):
@@ -49,12 +56,12 @@ class TestOpenKBPDataModule(pl.LightningDataModule):
 
     def setup(self, stage: Optional[str] = None):
         # Assign val datasets for use in dataloaders
-        self.test_data = get_dataset(path=config.MAIN_PATH + config.VAL_DIR, state='test',
-                                     size=100, cache=True)
+        self.test_data = get_dataset(path=os.path.join(config.MAIN_PATH, config.VAL_DIR), state='test',
+                                     size=config.VAL_SIZE, cache=True)
 
     def test_dataloader(self):
         return DataLoader(self.test_data, batch_size=1, shuffle=False,
-                          num_workers=config.NUM_WORKERS, pin_memory=True)
+                          num_workers=config.NUM_WORKERS, pin_memory=use_pin_memory())
 
 
 class Pyfer(pl.LightningModule):
@@ -73,7 +80,11 @@ class Pyfer(pl.LightningModule):
         self.model_, inside = create_pretrained_unet(
             in_ch=9, out_ch=1,
             list_ch_A=[-1, 16, 32, 64, 128, 256],
-            ckpt_file='HOME_DIRECTORY' + '/PretrainedModels/C3D_bs4_iter80000.pkl',
+            ckpt_file=resolve_optional_checkpoint(
+                'DOSE_PREDICTION_PRETRAINED_C3D',
+                'PretrainedModels/DosePrediction/C3D_bs4_iter80000.pkl',
+                'PretrainedModels/C3D_bs4_iter80000.pkl',
+            ),
             feature_size=16,
             img_size=(config.IMAGE_SIZE, config.IMAGE_SIZE, config.IMAGE_SIZE),
             num_layers=8,  # 4, 8, 12
@@ -90,7 +101,7 @@ class Pyfer(pl.LightningModule):
         self.lr = config_param["lr"]
         self.weight_decay = config_param["weight_decay"]
 
-        self.loss_function = GenLoss()
+        self.loss_function = GenLoss(im_size=config.IMAGE_SIZE)
         self.eps_train_loss = 0.01
 
         self.best_average_val_index = -99999999.
@@ -192,8 +203,13 @@ class Pyfer(pl.LightningModule):
         return {"log": tensorboard_logs}
 
     def configure_optimizers(self):
-        optimizer = bnb.optim.Adam8bit(self.model_.parameters(), lr=self.lr,
-                                       weight_decay=self.weight_decay)
+        bnb = get_bitsandbytes_module()
+        if use_bitsandbytes() and bnb is not None:
+            optimizer = bnb.optim.Adam8bit(self.model_.parameters(), lr=self.lr,
+                                           weight_decay=self.weight_decay)
+        else:
+            optimizer = torch.optim.AdamW(self.model_.parameters(), lr=self.lr,
+                                          weight_decay=self.weight_decay)
         return optimizer
 
     def test_step(self, batch_data, batch_idx):
@@ -220,7 +236,7 @@ class Pyfer(pl.LightningModule):
         save_results = True
 
         if save_results and batch_idx < 100:
-            ckp_re_dir = os.path.join('YourSampleImages/DosePrediction' + 'ours_model')
+            ckp_re_dir = resolve_output_dir('DosePrediction', 'test_outputs', 'ours_model')
 
             # Plot DVH corresponding for each sample
             plot_DVH(prediction, batch_data, path=os.path.join(ckp_re_dir, 'dvh_{}.png'.format(batch_idx)))
@@ -287,8 +303,22 @@ class Pyfer(pl.LightningModule):
         return self.dict_DVH_dif
 
 
-def main(freeze=True, delta1=10, delta2=8, run_id=None, run_name=None, ckpt_path=None):
-    # Initialise the LightningModule
+def build_logger(run_id=None, run_name=None):
+    logger_type = os.environ.get("DOSE_PREDICTION_LOGGER", "csv").lower()
+    if logger_type == "mlflow":
+        tracking_uri = os.environ.get("DOSE_PREDICTION_MLFLOW_TRACKING_URI", "file:" + resolve_output_dir("mlruns"))
+        return MLFlowLogger(
+            experiment_name=os.environ.get("DOSE_PREDICTION_EXPERIMENT", "dose_prediction"),
+            tracking_uri=tracking_uri,
+            run_id=run_id,
+            run_name=run_name,
+        )
+
+    return CSVLogger(save_dir=resolve_output_dir("logs"), name="dose_prediction")
+
+
+def main(freeze=True, delta1=10, delta2=8, run_id=None, run_name=None, ckpt_path=None,
+         max_epochs=None, fast_dev_run=False):
     openkbp_ds = OpenKBPDataModule()
     config_param = {
         "act": 'mish',
@@ -303,51 +333,36 @@ def main(freeze=True, delta1=10, delta2=8, run_id=None, run_name=None, ckpt_path
         freeze=freeze
     )
 
-    # Set up checkpoints
+    ckpt_dir = ckpt_path or config.CHECKPOINT_MODEL_DIR_FINAL
+    Path(ckpt_dir).mkdir(parents=True, exist_ok=True)
+
     checkpoint_callback = ModelCheckpoint(
-        dirpath=ckpt_path,
+        dirpath=ckpt_dir,
         save_last=True, monitor="mean_dose_score", mode="max",
         every_n_epochs=net.check_val,
         auto_insert_metric_name=True,
     )
 
-    # Set up logger
-    if run_name is None:
-        mlflow_logger = MLFlowLogger(
-            experiment_name='EXPERIMENT_NAME',
-            tracking_uri="databricks",
-            run_id=run_id
-        )
-    else:
-        mlflow_logger = MLFlowLogger(
-            experiment_name='EXPERIMENT_NAME',
-            tracking_uri="databricks",
-            run_name=run_name
-        )
+    accelerator, devices = get_lightning_accelerator()
+    logger = build_logger(run_id=run_id, run_name=run_name)
 
-    # Initialise Lightning's trainer.
     trainer = pl.Trainer(
-        devices=[0],
-        accelerator="gpu",
-        max_epochs=net.max_epochs,
+        devices=devices,
+        accelerator=accelerator,
+        max_epochs=max_epochs or net.max_epochs,
         check_val_every_n_epoch=net.check_val,
         callbacks=[checkpoint_callback],
-        logger=mlflow_logger,
-        default_root_dir=ckpt_path,
-        # enable_progress_bar=True,
-        # log_every_n_steps=net.check_val,
+        logger=logger,
+        default_root_dir=ckpt_dir,
+        fast_dev_run=fast_dev_run,
     )
 
-    # Train
-    if run_name is None:
-        trainer.fit(net,
-                    datamodule=openkbp_ds,
-                    ckpt_path=os.path.join(ckpt_path, 'last.ckpt'))
-    else:
-        trainer.fit(net, datamodule=openkbp_ds)
+    last_ckpt = os.path.join(ckpt_dir, 'last.ckpt')
+    resume_ckpt = last_ckpt if (run_name is None and os.path.exists(last_ckpt)) else None
+    trainer.fit(net, datamodule=openkbp_ds, ckpt_path=resume_ckpt)
 
     return net
 
 
 if __name__ == '__main__':
-    net_ = main()
+    main()
