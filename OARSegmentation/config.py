@@ -7,6 +7,8 @@ from monai.transforms import (
 )
 import multiprocessing
 
+DEFAULT_NUM_WORKERS = 0 if os.name == "nt" else min(4, multiprocessing.cpu_count())
+
 import sys
 
 from DosePrediction.utils.runtime import resolve_data_root, resolve_output_dir, REPO_ROOT
@@ -22,7 +24,7 @@ TRAIN_SIZE = int(os.environ.get("OAR_SEG_TRAIN_SIZE", 200))
 VAL_SIZE = int(os.environ.get("OAR_SEG_VAL_SIZE", 100))
 LEARNING_RATE = float(os.environ.get("OAR_SEG_LEARNING_RATE", 2e-4))
 BATCH_SIZE = int(os.environ.get("OAR_SEG_BATCH_SIZE", 1))
-NUM_WORKERS = int(os.environ.get("OAR_SEG_NUM_WORKERS", min(4, multiprocessing.cpu_count())))
+NUM_WORKERS = int(os.environ.get("OAR_SEG_NUM_WORKERS", DEFAULT_NUM_WORKERS))
 CACHE_RATE = float(os.environ.get("OAR_SEG_CACHE_RATE", 1.0))
 IMAGE_SIZE = int(os.environ.get("OAR_SEG_IMAGE_SIZE", 96))
 CHANNEL_IMG = 3
