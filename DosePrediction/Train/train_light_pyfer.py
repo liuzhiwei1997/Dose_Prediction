@@ -236,7 +236,7 @@ class Pyfer(pl.LightningModule):
 
         torch.cuda.empty_cache()
         save_prediction_nifti = os.environ.get("DOSE_PREDICTION_SAVE_TEST_NIFTI", "1") == "1"
-        save_test_dvh = os.environ.get("DOSE_PREDICTION_SAVE_TEST_DVH", "1") == "1"
+        save_test_dvh = os.environ.get("DOSE_PREDICTION_SAVE_TEST_DVH", "0") == "1"
         save_test_jpg = os.environ.get("DOSE_PREDICTION_SAVE_TEST_JPG", "0") == "1"
 
         name_p = Path(batch_data['file_path'][0]).parent.name
