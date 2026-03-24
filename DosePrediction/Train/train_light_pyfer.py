@@ -235,8 +235,9 @@ class Pyfer(pl.LightningModule):
         self.list_DVH_dif.append(dvh_dif)
 
         torch.cuda.empty_cache()
-        save_results = True
         save_prediction_nifti = os.environ.get("DOSE_PREDICTION_SAVE_TEST_NIFTI", "1") == "1"
+        save_test_dvh = os.environ.get("DOSE_PREDICTION_SAVE_TEST_DVH", "1") == "1"
+        save_test_jpg = os.environ.get("DOSE_PREDICTION_SAVE_TEST_JPG", "0") == "1"
 
         name_p = Path(batch_data['file_path'][0]).parent.name
 
@@ -247,48 +248,45 @@ class Pyfer(pl.LightningModule):
             prediction_nii.CopyInformation(reference_nii)
             sitk.WriteImage(prediction_nii, str(prediction_dir / 'dose.nii.gz'))
 
-        if save_results and batch_idx < 100:
+        if batch_idx < 100:
             ckp_re_dir = resolve_output_dir('DosePrediction', 'test_outputs', 'ours_model')
 
-            # Plot DVH corresponding for each sample
-            plot_DVH(prediction, batch_data, path=os.path.join(ckp_re_dir, 'dvh_{}.png'.format(batch_idx)))
+            if save_test_dvh:
+                plot_DVH(prediction, batch_data, path=os.path.join(ckp_re_dir, 'dvh_{}.png'.format(batch_idx)))
 
-            # Post-processing and evaluation
-            gt_dose[possible_dose_mask < 1] = 0
+            if save_test_jpg:
+                gt_dose[possible_dose_mask < 1] = 0
 
-            predicted_img = torch.permute(prediction[0].cpu(), (1, 0, 2, 3))
-            gt_img = torch.permute(gt_dose[0], (1, 0, 2, 3))
-            for i in range(len(predicted_img)):
-                predicted_i = predicted_img[i][0].numpy()
-                gt_i = 70. * gt_img[i][0].numpy()
-                error = np.abs(gt_i - predicted_i)
+                predicted_img = torch.permute(prediction[0].cpu(), (1, 0, 2, 3))
+                gt_img = torch.permute(gt_dose[0], (1, 0, 2, 3))
+                for i in range(len(predicted_img)):
+                    predicted_i = predicted_img[i][0].numpy()
+                    gt_i = 70. * gt_img[i][0].numpy()
+                    error = np.abs(gt_i - predicted_i)
 
-                # Create a figure and axis object using Matplotlib
-                fig, axs = plt.subplots(3, 1, figsize=(4, 10))
-                plt.subplots_adjust(wspace=0, hspace=0)
+                    # Create a figure and axis object using Matplotlib
+                    fig, axs = plt.subplots(3, 1, figsize=(4, 10))
+                    plt.subplots_adjust(wspace=0, hspace=0)
 
-                # Display the ground truth array
-                axs[0].imshow(gt_i, cmap='jet')
-                # axs[0].set_title('Ground Truth')
-                axs[0].axis('off')
+                    # Display the ground truth array
+                    axs[0].imshow(gt_i, cmap='jet')
+                    axs[0].axis('off')
 
-                # Display the prediction array
-                axs[1].imshow(predicted_i, cmap='jet')
-                # axs[1].set_title('Prediction')
-                axs[1].axis('off')
+                    # Display the prediction array
+                    axs[1].imshow(predicted_i, cmap='jet')
+                    axs[1].axis('off')
 
-                # Display the error map using a heatmap
-                axs[2].imshow(error, cmap='jet')
-                # axs[2].set_title('Error Map')
-                axs[2].axis('off')
+                    # Display the error map using a heatmap
+                    axs[2].imshow(error, cmap='jet')
+                    axs[2].axis('off')
 
-                save_dir = Path(ckp_re_dir) / f"{name_p}_{batch_idx}"
-                save_dir.mkdir(parents=True, exist_ok=True)
+                    save_dir = Path(ckp_re_dir) / f"{name_p}_{batch_idx}"
+                    save_dir.mkdir(parents=True, exist_ok=True)
 
-                fig.savefig(save_dir / f"{i}.jpg", bbox_inches="tight")
+                    fig.savefig(save_dir / f"{i}.jpg", bbox_inches="tight")
 
-                torch.cuda.empty_cache()
-                gc.collect()
+                    torch.cuda.empty_cache()
+                    gc.collect()
 
         self.list_dose_metric.append(dose_dif)
         return {"dose_dif": dose_dif}
