@@ -223,7 +223,8 @@ class Pyfer(pl.LightningModule):
         prediction = self.forward(input_)
         prediction = prediction[1][0].cpu()
 
-        prediction[np.logical_or(possible_dose_mask < 1, prediction < 0)] = 0
+        invalid_mask = torch.logical_or(possible_dose_mask < 1, prediction < 0)
+        prediction[invalid_mask] = 0
 
         prediction = 70. * prediction
 
@@ -246,7 +247,7 @@ class Pyfer(pl.LightningModule):
 
             predicted_img = torch.permute(prediction[0].cpu(), (1, 0, 2, 3))
             gt_img = torch.permute(gt_dose[0], (1, 0, 2, 3))
-            name_p = batch_data['file_path'][0].split("/")[-2]
+            name_p = Path(batch_data['file_path'][0]).parent.name
 
             for i in range(len(predicted_img)):
                 predicted_i = predicted_img[i][0].numpy()
@@ -272,11 +273,10 @@ class Pyfer(pl.LightningModule):
                 # axs[2].set_title('Error Map')
                 axs[2].axis('off')
 
-                save_dir = os.path.join(ckp_re_dir, '{}_{}'.format(name_p, batch_idx))
-                if not os.path.isdir(save_dir):
-                    os.mkdir(save_dir)
+                save_dir = Path(ckp_re_dir) / f"{name_p}_{batch_idx}"
+                save_dir.mkdir(parents=True, exist_ok=True)
 
-                fig.savefig(os.path.join(save_dir, '{}.jpg'.format(i)), bbox_inches="tight")
+                fig.savefig(save_dir / f"{i}.jpg", bbox_inches="tight")
 
                 torch.cuda.empty_cache()
                 del batch_data
