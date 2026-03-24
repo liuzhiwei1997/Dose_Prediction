@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Optional
 
 import DosePrediction.Train.config as config
+import SimpleITK as sitk
 from monai.data import DataLoader, list_data_collate
 
 import pytorch_lightning as pl
@@ -235,6 +236,16 @@ class Pyfer(pl.LightningModule):
 
         torch.cuda.empty_cache()
         save_results = True
+        save_prediction_nifti = os.environ.get("DOSE_PREDICTION_SAVE_TEST_NIFTI", "1") == "1"
+
+        name_p = Path(batch_data['file_path'][0]).parent.name
+
+        if save_prediction_nifti:
+            prediction_dir = Path(resolve_output_dir('DosePrediction', 'predictions', name_p))
+            prediction_nii = sitk.GetImageFromArray(prediction[0, 0].numpy().astype(np.float32))
+            reference_nii = sitk.ReadImage(batch_data['file_path'][0])
+            prediction_nii.CopyInformation(reference_nii)
+            sitk.WriteImage(prediction_nii, str(prediction_dir / 'dose.nii.gz'))
 
         if save_results and batch_idx < 100:
             ckp_re_dir = resolve_output_dir('DosePrediction', 'test_outputs', 'ours_model')
@@ -247,8 +258,6 @@ class Pyfer(pl.LightningModule):
 
             predicted_img = torch.permute(prediction[0].cpu(), (1, 0, 2, 3))
             gt_img = torch.permute(gt_dose[0], (1, 0, 2, 3))
-            name_p = Path(batch_data['file_path'][0]).parent.name
-
             for i in range(len(predicted_img)):
                 predicted_i = predicted_img[i][0].numpy()
                 gt_i = 70. * gt_img[i][0].numpy()
