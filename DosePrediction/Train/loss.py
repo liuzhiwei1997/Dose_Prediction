@@ -54,17 +54,13 @@ class GenLoss(nn.Module):
         self.ds = nn.L1Loss(reduction='mean')
         self.im_size = im_size
 
-    def downSample(self, volume, mask):
-        volumes = []
-        masks = []
-        # 4 is depth
-        for i in range(1, 4):
-            dim = self.im_size // np.power(2, i)
-            volume_int = interpolate(volume, size=(dim, dim, dim), mode='trilinear', align_corners=True)
-            mask_int = interpolate(mask, size=(dim, dim, dim), mode='nearest-exact')
-            volumes.append(volume_int)
-            masks.append(mask_int)
-        return volumes, masks
+    @staticmethod
+    def resize_like(volume, reference, mode, align_corners=None):
+        target_size = reference.shape[-3:]
+        kwargs = {"size": target_size, "mode": mode}
+        if align_corners is not None:
+            kwargs["align_corners"] = align_corners
+        return interpolate(volume, **kwargs)
 
     def forward(self, predictions, gt, delta1=10, delta2=1, mode='train', casecade=False, freez=True, huber=False):
         gt_dose = gt[:, 0:1, :, :, :]
@@ -84,12 +80,12 @@ class GenLoss(nn.Module):
             # intermediate out
             predicted_intermediate = predictions[1:]
 
-            gt_intermediate, mask_intermediate = self.downSample(gt_dose, possible_dose_mask)
-
             l_ds = 0
-            for i, (predicted_i, gt_i) in enumerate(zip(predicted_intermediate, gt_intermediate)):
-                predicted_i = predicted_i[mask_intermediate[i] > 0]
-                gt_i = gt_i[mask_intermediate[i] > 0]
+            for predicted_i in predicted_intermediate:
+                gt_i = self.resize_like(gt_dose, predicted_i, mode='trilinear', align_corners=True)
+                mask_i = self.resize_like(possible_dose_mask, predicted_i, mode='nearest-exact')
+                predicted_i = predicted_i[mask_i > 0]
+                gt_i = gt_i[mask_i > 0]
                 l_ds += self.ds(predicted_i, gt_i)
             # l_ds += self.ds(pred, gt_dose)
             # l_ds /= len(preds)
