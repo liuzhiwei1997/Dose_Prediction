@@ -288,8 +288,6 @@ class Pyfer(pl.LightningModule):
                 fig.savefig(save_dir / f"{i}.jpg", bbox_inches="tight")
 
                 torch.cuda.empty_cache()
-                del batch_data
-                del prediction
                 gc.collect()
 
         self.list_dose_metric.append(dose_dif)
