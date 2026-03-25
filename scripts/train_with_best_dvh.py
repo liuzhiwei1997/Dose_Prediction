@@ -17,6 +17,33 @@ from DosePrediction.Train.train_light_pyfer import OpenKBPDataModule, Pyfer, bui
 from DosePrediction.utils.runtime import get_lightning_accelerator
 
 
+def resolve_best_json(candidate_path: str) -> Path:
+    candidate = Path(candidate_path)
+    if candidate.exists():
+        return candidate
+
+    fallback_candidates = [
+        Path("runs/DosePrediction/dvh_tuning_stage2/dvh_tuning_results.json"),
+        Path("runs/DosePrediction/dvh_tuning_stage1/dvh_tuning_results.json"),
+    ]
+    for path in fallback_candidates:
+        if path.exists():
+            print(f"[INFO] best-json not found at '{candidate}'. Fallback to '{path}'.")
+            return path
+
+    discovered = sorted(Path("runs").glob("**/dvh_tuning_results.json"), key=lambda p: p.stat().st_mtime, reverse=True)
+    if discovered:
+        print(f"[INFO] best-json not found at '{candidate}'. Fallback to latest '{discovered[0]}'.")
+        return discovered[0]
+
+    raise FileNotFoundError(
+        f"Best tuning summary not found: {candidate}\n"
+        f"Please run DVH tuning first, for example:\n"
+        f"  python scripts/tune_dvh_hparams.py --max-epochs 20 --output-root runs/DosePrediction/dvh_tuning_stage1\n"
+        f"  python scripts/tune_dvh_hparams.py --max-epochs 35 --output-root runs/DosePrediction/dvh_tuning_stage2"
+    )
+
+
 def load_best_config(summary_path: Path) -> dict:
     payload = json.loads(summary_path.read_text(encoding="utf-8"))
     best = payload.get("best")
@@ -69,9 +96,7 @@ def main() -> None:
     parser.add_argument("--output-dir", default=config.CHECKPOINT_MODEL_DIR_FINAL)
     args = parser.parse_args()
 
-    best_path = Path(args.best_json)
-    if not best_path.exists():
-        raise FileNotFoundError(f"Best tuning summary not found: {best_path}")
+    best_path = resolve_best_json(args.best_json)
 
     os.makedirs(args.output_dir, exist_ok=True)
     best_config = load_best_config(best_path)

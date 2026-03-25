@@ -7,6 +7,13 @@ REM   scripts\train_with_best_dvh_windows.bat
 
 cd /d %~dp0\..
 
+if not exist runs\DosePrediction\dvh_tuning_stage2\dvh_tuning_results.json (
+  echo [INFO] Missing runs\DosePrediction\dvh_tuning_stage2\dvh_tuning_results.json
+  echo [INFO] Running DVH tuning first...
+  call scripts\run_dvh_optimization_windows.bat
+  if errorlevel 1 exit /b 1
+)
+
 python scripts/train_with_best_dvh.py ^
   --best-json runs/DosePrediction/dvh_tuning_stage2/dvh_tuning_results.json ^
   --freeze-epochs 300 ^

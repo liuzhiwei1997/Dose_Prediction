@@ -221,6 +221,8 @@ Windows（cmd）可直接运行：
 scripts\train_with_best_dvh_windows.bat
 ```
 
+> 如果 `dvh_tuning_results.json` 不存在，脚本会先自动调用调参流程，再启动正式训练。
+
 ---
 
 ## 8. 提升效果的实操建议（按优先级）
