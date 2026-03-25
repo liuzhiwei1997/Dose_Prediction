@@ -101,6 +101,10 @@ class Pyfer(pl.LightningModule):
 
         self.lr = config_param["lr"]
         self.weight_decay = config_param["weight_decay"]
+        self.hotspot_weight = config_param.get("hotspot_weight", 0.75)
+        self.hotspot_quantile = config_param.get("hotspot_quantile", 0.98)
+        self.coldspot_weight = config_param.get("coldspot_weight", 0.35)
+        self.coldspot_quantile = config_param.get("coldspot_quantile", 0.10)
 
         self.loss_function = GenLoss(im_size=config.IMAGE_SIZE)
         self.eps_train_loss = 0.01
@@ -141,7 +145,9 @@ class Pyfer(pl.LightningModule):
         torch.cuda.empty_cache()
 
         loss = self.loss_function(output, target, casecade=True, freez=self.freeze,
-                                  delta1=self.config_param['delta1'], delta2=self.config_param['delta2'])
+                                  delta1=self.config_param['delta1'], delta2=self.config_param['delta2'],
+                                  hotspot_weight=self.hotspot_weight, hotspot_quantile=self.hotspot_quantile,
+                                  coldspot_weight=self.coldspot_weight, coldspot_quantile=self.coldspot_quantile)
 
         if self.moving_train_loss is None:
             self.moving_train_loss = loss.item()
