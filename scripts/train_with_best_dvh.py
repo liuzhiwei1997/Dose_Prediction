@@ -7,6 +7,7 @@ import sys
 from pathlib import Path
 
 import pytorch_lightning as pl
+from pytorch_lightning.callbacks import ModelCheckpoint
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
@@ -67,11 +68,32 @@ def build_model_config(best: dict) -> dict:
     }
 
 
-def run_training(model_cfg: dict, max_epochs: int, freeze: bool, ckpt_dir: Path, run_name: str) -> None:
+def run_training(
+        model_cfg: dict,
+        max_epochs: int,
+        freeze: bool,
+        ckpt_dir: Path,
+        run_name: str,
+        resume: bool,
+) -> None:
     data = OpenKBPDataModule()
     model = Pyfer(model_cfg, freeze=freeze)
 
     accelerator, devices = get_lightning_accelerator()
+    ckpt_dir.mkdir(parents=True, exist_ok=True)
+    checkpoint_callback = ModelCheckpoint(
+        dirpath=str(ckpt_dir),
+        save_last=True,
+        every_n_epochs=max(1, model.check_val),
+        save_top_k=-1,
+    )
+    last_ckpt = ckpt_dir / "last.ckpt"
+    resume_ckpt = str(last_ckpt) if (resume and last_ckpt.exists()) else None
+    if resume and resume_ckpt is not None:
+        print(f"[INFO] Resuming from checkpoint: {resume_ckpt}")
+    elif resume:
+        print(f"[INFO] Resume enabled, but no checkpoint found at: {last_ckpt}. Start from scratch.")
+
     trainer = pl.Trainer(
         devices=devices,
         accelerator=accelerator,
@@ -79,8 +101,9 @@ def run_training(model_cfg: dict, max_epochs: int, freeze: bool, ckpt_dir: Path,
         check_val_every_n_epoch=model.check_val,
         logger=build_logger(run_name=run_name),
         default_root_dir=str(ckpt_dir),
+        callbacks=[checkpoint_callback],
     )
-    trainer.fit(model, datamodule=data)
+    trainer.fit(model, datamodule=data, ckpt_path=resume_ckpt)
 
 
 def main() -> None:
@@ -93,6 +116,7 @@ def main() -> None:
     parser.add_argument("--freeze-epochs", type=int, default=300)
     parser.add_argument("--finetune-epochs", type=int, default=120)
     parser.add_argument("--skip-finetune", action="store_true")
+     parser.add_argument("--resume", action="store_true", help="Resume each stage from <output-dir>/<stage>/last.ckpt if it exists.")
     parser.add_argument("--output-dir", default=config.CHECKPOINT_MODEL_DIR_FINAL)
     args = parser.parse_args()
 
@@ -111,6 +135,7 @@ def main() -> None:
         freeze=True,
         ckpt_dir=Path(args.output_dir) / "freeze_stage",
         run_name="best_dvh_freeze_stage",
+        resume=args.resume,
     )
 
     if not args.skip_finetune:
@@ -120,6 +145,7 @@ def main() -> None:
             freeze=False,
             ckpt_dir=Path(args.output_dir) / "finetune_stage",
             run_name="best_dvh_finetune_stage",
+            resume=args.resume,
         )
 
 

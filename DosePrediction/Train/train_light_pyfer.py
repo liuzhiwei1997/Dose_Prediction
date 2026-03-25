@@ -63,7 +63,7 @@ class TestOpenKBPDataModule(pl.LightningDataModule):
     def setup(self, stage: Optional[str] = None):
         # Assign val datasets for use in dataloaders
         cache_enabled = use_cached_dataset()
-        self.test_data = get_dataset(path=os.path.join(config.MAIN_PATH, config.VAL_DIR), state='test',
+        self.test_data = get_dataset(path=os.path.join(config.MAIN_PATH, config.TEST_DIR), state='test',
                                      size=config.VAL_SIZE, cache=cache_enabled)
 
     def test_dataloader(self):
