@@ -46,6 +46,9 @@ pip install -r requirements.txt
 export DOSE_PREDICTION_FORCE_CPU=1
 ```
 
+> Windows 用户提示：如果你在 `cmd` 里看到  
+> `bash 不是内部或外部命令`，请改用下面的 `python` 命令或 `scripts/run_dvh_optimization_windows.bat`，不要直接执行 `.sh`。
+
 ---
 
 ## 4. 第一步：先拿到可复现基线
@@ -126,6 +129,12 @@ print(json.dumps(data["best"], indent=2, ensure_ascii=False))
 PY
 ```
 
+### Windows（cmd）一键执行
+
+```bat
+scripts\run_dvh_optimization_windows.bat
+```
+
 ---
 
 ## 6. 第三步：用最优参数做完整训练
@@ -200,6 +209,7 @@ PY
 - **预测全零或极低**：检查 `possible_dose_mask`、模型输出缩放（是否 `*70`）。
 - **DVH 波动很大**：检查数据读取是否稳定（随机增强在验证集应关闭）。
 - **调参结果不一致**：固定随机种子，固定 train/val 划分，减少并行扰动。
+- **Windows 无法执行 `bash`**：使用 `scripts\run_dvh_optimization_windows.bat` 或在 PowerShell 里逐条运行 `python scripts/tune_dvh_hparams.py ...`。
 
 ---
 
