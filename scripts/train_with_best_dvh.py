@@ -116,7 +116,7 @@ def main() -> None:
     parser.add_argument("--freeze-epochs", type=int, default=300)
     parser.add_argument("--finetune-epochs", type=int, default=120)
     parser.add_argument("--skip-finetune", action="store_true")
-     parser.add_argument("--resume", action="store_true", help="Resume each stage from <output-dir>/<stage>/last.ckpt if it exists.")
+    parser.add_argument("--resume", action="store_true", help="Resume each stage from <output-dir>/<stage>/last.ckpt if it exists.")
     parser.add_argument("--output-dir", default=config.CHECKPOINT_MODEL_DIR_FINAL)
     args = parser.parse_args()
 

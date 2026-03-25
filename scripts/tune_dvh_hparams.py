@@ -84,7 +84,8 @@ def run_trial(
         **trial_cfg,
     }
     model = Pyfer(cfg, freeze=args.freeze)
-    data = OpenKBPDataModule()
+    train_val_data = OpenKBPDataModule()
+    test_data = TestOpenKBPDataModule()
 
     accelerator, devices = get_lightning_accelerator()
     trainer = pl.Trainer(
@@ -98,8 +99,8 @@ def run_trial(
         enable_progress_bar=True,
     )
 
-    trainer.fit(model, datamodule=data)
-    trainer.test(model, datamodule=data)
+    trainer.fit(model, datamodule=train_val_data)
+    trainer.test(model, datamodule=test_data)
 
     dose_score = float(np.mean(model.list_dose_metric))
     dvh_score = float(np.mean(model.list_DVH_dif))
