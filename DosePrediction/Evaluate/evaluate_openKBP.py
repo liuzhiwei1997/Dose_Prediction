@@ -130,7 +130,7 @@ def get_Dose_score_and_DVH_score(prediction_dir, gt_dir):
 
                 for metric in gt_DVH.keys():
                     list_DVH_dif.append(abs(gt_DVH[metric] - pred_DVH[metric]))
-                    if not metric_dif[metric]:
+                    if metric not in metric_dif:
                         metric_dif[metric] = []
                         gt_list_DVH[metric] = []
                         pred_list_DVH[metric] = []
