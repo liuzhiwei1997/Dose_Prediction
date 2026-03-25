@@ -28,6 +28,10 @@ os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
 torch.backends.cudnn.benchmark = torch.cuda.is_available()
 
 
+def use_cached_dataset():
+    return os.environ.get("DOSE_PREDICTION_USE_CACHE", "1") == "1"
+
+
 class OpenKBPDataModule(pl.LightningDataModule):
     def __init__(self):
         super().__init__()
@@ -36,11 +40,12 @@ class OpenKBPDataModule(pl.LightningDataModule):
 
     def setup(self, stage: Optional[str] = None):
         # Assign train/val datasets for use in dataloaders
+        cache_enabled = use_cached_dataset()
         self.train_data = get_dataset(path=os.path.join(config.MAIN_PATH, config.TRAIN_DIR), state='train',
-                                      size=config.TRAIN_SIZE, cache=True, crop_flag=False)
+                                      size=config.TRAIN_SIZE, cache=cache_enabled, crop_flag=False)
 
         self.val_data = get_dataset(path=os.path.join(config.MAIN_PATH, config.VAL_DIR), state='val',
-                                    size=config.VAL_SIZE, cache=True)
+                                    size=config.VAL_SIZE, cache=cache_enabled)
 
     def train_dataloader(self):
         return DataLoader(self.train_data, batch_size=config.BATCH_SIZE, shuffle=True,
@@ -57,8 +62,9 @@ class TestOpenKBPDataModule(pl.LightningDataModule):
 
     def setup(self, stage: Optional[str] = None):
         # Assign val datasets for use in dataloaders
+        cache_enabled = use_cached_dataset()
         self.test_data = get_dataset(path=os.path.join(config.MAIN_PATH, config.VAL_DIR), state='test',
-                                     size=config.VAL_SIZE, cache=True)
+                                     size=config.VAL_SIZE, cache=cache_enabled)
 
     def test_dataloader(self):
         return DataLoader(self.test_data, batch_size=1, shuffle=False,
@@ -101,6 +107,10 @@ class Pyfer(pl.LightningModule):
 
         self.lr = config_param["lr"]
         self.weight_decay = config_param["weight_decay"]
+        self.hotspot_weight = config_param.get("hotspot_weight", 0.75)
+        self.hotspot_quantile = config_param.get("hotspot_quantile", 0.98)
+        self.coldspot_weight = config_param.get("coldspot_weight", 0.35)
+        self.coldspot_quantile = config_param.get("coldspot_quantile", 0.10)
 
         self.loss_function = GenLoss(im_size=config.IMAGE_SIZE)
         self.eps_train_loss = 0.01
@@ -141,7 +151,9 @@ class Pyfer(pl.LightningModule):
         torch.cuda.empty_cache()
 
         loss = self.loss_function(output, target, casecade=True, freez=self.freeze,
-                                  delta1=self.config_param['delta1'], delta2=self.config_param['delta2'])
+                                  delta1=self.config_param['delta1'], delta2=self.config_param['delta2'],
+                                  hotspot_weight=self.hotspot_weight, hotspot_quantile=self.hotspot_quantile,
+                                  coldspot_weight=self.coldspot_weight, coldspot_quantile=self.coldspot_quantile)
 
         if self.moving_train_loss is None:
             self.moving_train_loss = loss.item()
