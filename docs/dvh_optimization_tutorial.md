@@ -193,6 +193,34 @@ print("Mean DVH score:", sum(model.list_DVH_dif)/len(model.list_DVH_dif))
 PY
 ```
 
+## 7.5 自动注入 best 参数并启动正式训练（一键）
+
+当 `runs/DosePrediction/dvh_tuning_stage2/dvh_tuning_results.json` 已产生后，直接执行：
+
+```bash
+python scripts/train_with_best_dvh.py \
+  --best-json runs/DosePrediction/dvh_tuning_stage2/dvh_tuning_results.json \
+  --freeze-epochs 300 \
+  --finetune-epochs 120 \
+  --output-dir runs/DosePrediction/final_from_best_dvh
+```
+
+如果你只想跑冻结阶段（不做解冻微调）：
+
+```bash
+python scripts/train_with_best_dvh.py \
+  --best-json runs/DosePrediction/dvh_tuning_stage2/dvh_tuning_results.json \
+  --freeze-epochs 300 \
+  --skip-finetune \
+  --output-dir runs/DosePrediction/final_from_best_dvh
+```
+
+Windows（cmd）可直接运行：
+
+```bat
+scripts\train_with_best_dvh_windows.bat
+```
+
 ---
 
 ## 8. 提升效果的实操建议（按优先级）
