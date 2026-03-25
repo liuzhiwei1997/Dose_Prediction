@@ -62,7 +62,14 @@ class GenLoss(nn.Module):
             kwargs["align_corners"] = align_corners
         return interpolate(volume, **kwargs)
 
-    def forward(self, predictions, gt, delta1=10, delta2=1, mode='train', casecade=False, freez=True, huber=False):
+    @staticmethod
+    def _weighted_l1(predicted, target, weight):
+        diff = torch.abs(predicted - target)
+        weight_sum = torch.clamp(weight.sum(), min=1.0)
+        return (diff * weight).sum() / weight_sum
+
+    def forward(self, predictions, gt, delta1=10, delta2=1, mode='train', casecade=False, freez=True, huber=False,
+                hotspot_weight=0.0, hotspot_quantile=0.98, coldspot_weight=0.0, coldspot_quantile=0.10):
         gt_dose = gt[:, 0:1, :, :, :]
         possible_dose_mask = gt[:, 1:, :, :, :]
 
@@ -100,6 +107,18 @@ class GenLoss(nn.Module):
                 l_pre_net = self.ds(predicted, gt_dose)
 
             loss = delta1 * l_pre_net + delta2 * l_ds
+
+            if hotspot_weight > 0:
+                gt_hot_th = torch.quantile(gt_dose.detach(), hotspot_quantile)
+                hot_mask = (gt_dose >= gt_hot_th).float()
+                hot_weight = 1.0 + hotspot_weight * hot_mask
+                loss = loss + self._weighted_l1(predicted, gt_dose, hot_weight)
+
+            if coldspot_weight > 0:
+                gt_cold_th = torch.quantile(gt_dose.detach(), coldspot_quantile)
+                cold_mask = (gt_dose <= gt_cold_th).float()
+                cold_weight = 1.0 + coldspot_weight * cold_mask
+                loss = loss + self._weighted_l1(predicted, gt_dose, cold_weight)
 
             if casecade and not freez:
                 loss = loss + 0.5 * self.ds(predicted_A, gt_dose)
