@@ -7,6 +7,10 @@ REM   scripts\train_with_best_dvh_windows.bat
 
 cd /d %~dp0\..
 
+if "%DOSE_PREDICTION_NUM_WORKERS%"=="" set DOSE_PREDICTION_NUM_WORKERS=0
+if "%DOSE_PREDICTION_USE_CACHE%"=="" set DOSE_PREDICTION_USE_CACHE=0
+if "%DOSE_PREDICTION_CACHE_RATE%"=="" set DOSE_PREDICTION_CACHE_RATE=0.0
+
 if not exist runs\DosePrediction\dvh_tuning_stage2\dvh_tuning_results.json (
   echo [INFO] Missing runs\DosePrediction\dvh_tuning_stage2\dvh_tuning_results.json
   echo [INFO] Running DVH tuning first...

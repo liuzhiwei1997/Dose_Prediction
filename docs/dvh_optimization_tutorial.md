@@ -48,6 +48,8 @@ export DOSE_PREDICTION_FORCE_CPU=1
 
 > Windows 用户提示：如果你在 `cmd` 里看到  
 > `bash 不是内部或外部命令`，请改用下面的 `python` 命令或 `scripts/run_dvh_optimization_windows.bat`，不要直接执行 `.sh`。
+> 若出现 `MemoryError`，请设置：
+> `set DOSE_PREDICTION_NUM_WORKERS=0`、`set DOSE_PREDICTION_USE_CACHE=0`、`set DOSE_PREDICTION_CACHE_RATE=0.0`。
 
 ---
 
