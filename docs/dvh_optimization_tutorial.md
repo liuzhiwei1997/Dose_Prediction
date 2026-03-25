@@ -27,6 +27,20 @@
 2. **验证集 DVH 自动调参**（先找对 `D_0.1_cc`/`D99` 更友好的 loss 权重）
 3. **用最优参数做完整训练 + 推理评估**
 
+### 2.1 训练/验证/测试集怎么用（你这次重点）
+
+- `nifti-train-pats`：只用于**参数学习**（反向传播）。
+- `nifti-val-pats`：只用于**调参和早停判断**（不参与梯度更新）。
+- `nifti-test-pats`：只用于**最终一次报告**（不要在调参阶段反复看它）。
+
+当前代码已支持通过环境变量显式指定三者目录：
+
+```bash
+export DOSE_PREDICTION_TRAIN_DIR='provided-data/nifti-train-pats/pt_*'
+export DOSE_PREDICTION_VAL_DIR='provided-data/nifti-val-pats/pt_*'
+export DOSE_PREDICTION_TEST_DIR='provided-data/nifti-test-pats/pt_*'
+```
+
 ---
 
 ## 3. 环境准备
@@ -61,6 +75,9 @@ source .venv/bin/activate
 
 export DOSE_PREDICTION_DATA_ROOT=/workspace/Dose_Prediction
 export DOSE_PREDICTION_OUTPUT_ROOT=/workspace/Dose_Prediction/runs
+export DOSE_PREDICTION_TRAIN_DIR='provided-data/nifti-train-pats/pt_*'
+export DOSE_PREDICTION_VAL_DIR='provided-data/nifti-val-pats/pt_*'
+export DOSE_PREDICTION_TEST_DIR='provided-data/nifti-test-pats/pt_*'
 export DOSE_PREDICTION_NUM_WORKERS=4
 export DOSE_PREDICTION_BATCH_SIZE=1
 export DOSE_PREDICTION_SW_BATCH_SIZE=1
