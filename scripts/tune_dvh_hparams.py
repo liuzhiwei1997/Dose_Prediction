@@ -17,7 +17,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 import DosePrediction.Train.config as config
-from DosePrediction.Train.train_light_pyfer import OpenKBPDataModule, Pyfer, build_logger
+from DosePrediction.Train.train_light_pyfer import OpenKBPDataModule, TestOpenKBPDataModule, Pyfer, build_logger
 from DosePrediction.utils.runtime import get_lightning_accelerator
 
 
