@@ -37,10 +37,14 @@ def aggregate_metric_mae(dict_dvh: Dict[str, Dict[str, float]]) -> Dict[str, flo
         for key, pred_value in patient_values.items():
             if not key.startswith("pre"):
                 continue
-            metric_name = key.rsplit("_", 1)[-1]
-            if metric_name not in metric_diffs:
+            metric_name = None
+            for metric in metric_diffs.keys():
+                if key.endswith(f"_{metric}"):
+                    metric_name = metric
+                    break
+            if metric_name is None:
                 continue
-            gt_key = "gt" + key[3:]
+            gt_key = "gt_" + key[3:]
             if gt_key not in patient_values:
                 continue
             metric_diffs[metric_name].append(abs(pred_value - patient_values[gt_key]))
