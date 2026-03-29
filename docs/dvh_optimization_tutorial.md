@@ -265,3 +265,17 @@ scripts\train_with_best_dvh_windows.bat
 ---
 
 如果你愿意，我可以下一步给你一版“**自动读取 best config 并发起正式训练**”的脚本，把上述步骤串成一个命令跑完。
+
+## 附：Windows 下快速找最佳 epoch（不使用 heredoc）
+
+在 Windows `cmd` 里不要用 `python - <<'PY'`。请直接执行：
+
+```bat
+python scripts\find_best_metrics.py --logs-root runs\logs\dose_prediction --metric mean_dose_score --mode max --checkpoint-dir runs\DosePrediction\final
+```
+
+如果你要看最小 `val_loss`：
+
+```bat
+python scripts\find_best_metrics.py --logs-root runs\logs\dose_prediction --metric val_loss --mode min --checkpoint-dir runs\DosePrediction\final
+```
