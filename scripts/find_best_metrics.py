@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import re
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -40,6 +41,13 @@ def infer_epoch_from_step(rows: List[Dict[str, str]], step_value: str) -> str:
         if row.get("step", "") == step_value and row.get("epoch", "") not in ("", None):
             return row.get("epoch", "N/A")
     return "N/A"
+
+
+def parse_ckpt_epoch_step(ckpt_name: str) -> Optional[tuple]:
+    match = re.search(r"epoch=(\d+)-step=(\d+)\.ckpt$", ckpt_name)
+    if not match:
+        return None
+    return int(match.group(1)), int(match.group(2))
 
 
 def main() -> None:
@@ -83,6 +91,15 @@ def main() -> None:
             print("recent_ckpts:")
             for ck in ckpts[-5:]:
                 print(f"  - {ck}")
+
+        best_step = to_float(best.get("step", ""))
+        named_ckpts = [parse_ckpt_epoch_step(ck.name) for ck in ckpts]
+        named_ckpts = [c for c in named_ckpts if c is not None]
+        if best_step is not None and named_ckpts:
+            step_values = [s for _, s in named_ckpts]
+            if best_step < min(step_values) or best_step > max(step_values):
+                print("[WARN] metrics step range and checkpoint step range do not overlap.")
+                print("[WARN] This usually means logs-root and checkpoint-dir are from different runs.")
 
 
 if __name__ == "__main__":
