@@ -50,6 +50,29 @@ def parse_ckpt_epoch_step(ckpt_name: str) -> Optional[tuple]:
     return int(match.group(1)), int(match.group(2))
 
 
+def suggest_checkpoint_dirs(search_root: Path, metric_steps: List[float], max_suggestions: int = 5) -> List[tuple]:
+    if not metric_steps or not search_root.exists():
+        return []
+    metric_min, metric_max = min(metric_steps), max(metric_steps)
+    candidates = []
+    for ck in search_root.glob("**/*.ckpt"):
+        parsed = parse_ckpt_epoch_step(ck.name)
+        if parsed is None:
+            continue
+        _, step = parsed
+        parent = ck.parent
+        if metric_min <= step <= metric_max:
+            candidates.append((str(parent), step))
+    # Deduplicate by directory, keep nearest step to metric range center
+    center = (metric_min + metric_max) / 2.0
+    best_by_dir: Dict[str, float] = {}
+    for directory, step in candidates:
+        dist = abs(step - center)
+        if directory not in best_by_dir or dist < best_by_dir[directory]:
+            best_by_dir[directory] = dist
+    return sorted(best_by_dir.items(), key=lambda x: x[1])[:max_suggestions]
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Find best epoch from Lightning CSV metrics.")
     parser.add_argument("--logs-root", default="runs/logs/dose_prediction", help="Folder containing metrics.csv")
@@ -65,6 +88,8 @@ def main() -> None:
     metrics_path = metrics_files[-1]
     rows = load_metrics(metrics_path)
     best = find_best_row(rows, args.metric, args.mode)
+    metric_steps = [to_float(r.get("step", "")) for r in rows]
+    metric_steps = [s for s in metric_steps if s is not None]
     best_epoch = best.get("epoch", "")
     if best_epoch in ("", None):
         best_epoch = infer_epoch_from_step(rows, best.get("step", ""))
@@ -100,6 +125,12 @@ def main() -> None:
             if best_step < min(step_values) or best_step > max(step_values):
                 print("[WARN] metrics step range and checkpoint step range do not overlap.")
                 print("[WARN] This usually means logs-root and checkpoint-dir are from different runs.")
+                search_root = Path("runs/DosePrediction")
+                suggestions = suggest_checkpoint_dirs(search_root, metric_steps)
+                if suggestions:
+                    print("[HINT] Possible matching checkpoint directories:")
+                    for directory, dist in suggestions:
+                        print(f"  - {directory} (step-distance-to-center={dist:.1f})")
 
 
 if __name__ == "__main__":

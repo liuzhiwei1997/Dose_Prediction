@@ -276,6 +276,7 @@ python scripts\find_best_metrics.py --logs-root runs\logs\dose_prediction --metr
 
 > 说明：`mean_dose_score` 在训练日志中通常是负值（代码里做了取负），脚本会额外打印 `estimated_dose_score` 方便理解。
 > 若出现 `[WARN] metrics step range and checkpoint step range do not overlap.`，说明你传入的日志目录和权重目录不是同一次训练。
+> 新版脚本会自动给出 `[HINT] Possible matching checkpoint directories` 供你直接替换 `--checkpoint-dir`。
 
 如果你要看最小 `val_loss`：
 
