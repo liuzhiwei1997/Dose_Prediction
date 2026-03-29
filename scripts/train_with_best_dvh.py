@@ -18,7 +18,7 @@ from DosePrediction.Train.train_light_pyfer import OpenKBPDataModule, Pyfer, bui
 from DosePrediction.utils.runtime import get_lightning_accelerator
 
 
-def resolve_best_json(candidate_path: str) -> Path:
+def resolve_best_json(candidate_path: str) -> Path | None:
     candidate = Path(candidate_path)
     if candidate.exists():
         return candidate
@@ -37,12 +37,7 @@ def resolve_best_json(candidate_path: str) -> Path:
         print(f"[INFO] best-json not found at '{candidate}'. Fallback to latest '{discovered[0]}'.")
         return discovered[0]
 
-    raise FileNotFoundError(
-        f"Best tuning summary not found: {candidate}\n"
-        f"Please run DVH tuning first, for example:\n"
-        f"  python scripts/tune_dvh_hparams.py --max-epochs 20 --output-root runs/DosePrediction/dvh_tuning_stage1\n"
-        f"  python scripts/tune_dvh_hparams.py --max-epochs 35 --output-root runs/DosePrediction/dvh_tuning_stage2"
-    )
+    return None
 
 
 def load_best_config(summary_path: Path) -> dict:
@@ -65,6 +60,21 @@ def build_model_config(best: dict) -> dict:
         "hotspot_quantile": float(best.get("hotspot_quantile", 0.98)),
         "coldspot_weight": float(best.get("coldspot_weight", 0.35)),
         "coldspot_quantile": float(best.get("coldspot_quantile", 0.10)),
+    }
+
+
+def build_default_model_config() -> dict:
+    return {
+        "act": "mish",
+        "multiS_conv": True,
+        "lr": 0.0006130697604327541,
+        "weight_decay": 0.00016303111017674179,
+        "delta1": 10.0,
+        "delta2": 8.0,
+        "hotspot_weight": 0.75,
+        "hotspot_quantile": 0.98,
+        "coldspot_weight": 0.35,
+        "coldspot_quantile": 0.10,
     }
 
 
@@ -134,13 +144,20 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    best_path = resolve_best_json(args.best_json)
-
     os.makedirs(args.output_dir, exist_ok=True)
-    best_config = load_best_config(best_path)
-    model_cfg = build_model_config(best_config)
+    best_path = resolve_best_json(args.best_json)
+    if best_path is not None:
+        best_config = load_best_config(best_path)
+        model_cfg = build_model_config(best_config)
+    else:
+        model_cfg = build_default_model_config()
+        print(
+            "[WARN] No dvh_tuning_results.json found. "
+            "Falling back to default training config. "
+            "If --resume finds last.ckpt, training will continue from checkpoint weights."
+        )
 
-    print("Using best config:")
+    print("Using training config:")
     print(json.dumps(model_cfg, indent=2, ensure_ascii=False))
 
     run_training(
