@@ -44,8 +44,9 @@ CHECKPOINT_MODEL_DIR_FINAL_LINKED = resolve_output_dir("DosePrediction", "linked
 
 CHECKPOINT_RESULT_DIR = resolve_output_dir("DosePrediction", "results")
 
-TRAIN_DIR = 'provided-data/nifti-train-pats/pt_*'
-VAL_DIR = 'provided-data/nifti-test-pats/pt_*'
+TRAIN_DIR = os.environ.get("DOSE_PREDICTION_TRAIN_DIR", 'provided-data/nifti-train-pats/pt_*')
+VAL_DIR = os.environ.get("DOSE_PREDICTION_VAL_DIR", 'provided-data/nifti-val-pats/pt_*')
+TEST_DIR = os.environ.get("DOSE_PREDICTION_TEST_DIR", 'provided-data/nifti-test-pats/pt_*')
 MAIN_PATH = resolve_data_root()
 
 OAR_NAMES = [
