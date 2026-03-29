@@ -274,6 +274,8 @@ scripts\train_with_best_dvh_windows.bat
 python scripts\find_best_metrics.py --logs-root runs\logs\dose_prediction --metric mean_dose_score --mode max --checkpoint-dir runs\DosePrediction\final
 ```
 
+> 说明：`mean_dose_score` 在训练日志中通常是负值（代码里做了取负），脚本会额外打印 `estimated_dose_score` 方便理解。
+
 如果你要看最小 `val_loss`：
 
 ```bat
