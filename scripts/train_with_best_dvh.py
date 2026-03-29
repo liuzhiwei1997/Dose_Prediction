@@ -75,6 +75,8 @@ def run_training(
         ckpt_dir: Path,
         run_name: str,
         resume: bool,
+        check_val_every_n_epoch: int,
+        checkpoint_every_n_epochs: int,
 ) -> None:
     data = OpenKBPDataModule()
     model = Pyfer(model_cfg, freeze=freeze)
@@ -84,7 +86,7 @@ def run_training(
     checkpoint_callback = ModelCheckpoint(
         dirpath=str(ckpt_dir),
         save_last=True,
-        every_n_epochs=max(1, model.check_val),
+        every_n_epochs=max(1, checkpoint_every_n_epochs),
         save_top_k=-1,
     )
     last_ckpt = ckpt_dir / "last.ckpt"
@@ -98,7 +100,7 @@ def run_training(
         devices=devices,
         accelerator=accelerator,
         max_epochs=max_epochs,
-        check_val_every_n_epoch=model.check_val,
+        check_val_every_n_epoch=max(1, check_val_every_n_epoch),
         logger=build_logger(run_name=run_name),
         default_root_dir=str(ckpt_dir),
         callbacks=[checkpoint_callback],
@@ -118,6 +120,18 @@ def main() -> None:
     parser.add_argument("--skip-finetune", action="store_true")
     parser.add_argument("--resume", action="store_true", help="Resume each stage from <output-dir>/<stage>/last.ckpt if it exists.")
     parser.add_argument("--output-dir", default=config.CHECKPOINT_MODEL_DIR_FINAL)
+    parser.add_argument(
+        "--check-val-every-n-epoch",
+        type=int,
+        default=5,
+        help="Run validation every N epochs during training.",
+    )
+    parser.add_argument(
+        "--checkpoint-every-n-epochs",
+        type=int,
+        default=5,
+        help="Save epoch checkpoints every N epochs.",
+    )
     args = parser.parse_args()
 
     best_path = resolve_best_json(args.best_json)
@@ -136,6 +150,8 @@ def main() -> None:
         ckpt_dir=Path(args.output_dir) / "freeze_stage",
         run_name="best_dvh_freeze_stage",
         resume=args.resume,
+        check_val_every_n_epoch=args.check_val_every_n_epoch,
+        checkpoint_every_n_epochs=args.checkpoint_every_n_epochs,
     )
 
     if not args.skip_finetune:
@@ -146,6 +162,8 @@ def main() -> None:
             ckpt_dir=Path(args.output_dir) / "finetune_stage",
             run_name="best_dvh_finetune_stage",
             resume=args.resume,
+            check_val_every_n_epoch=args.check_val_every_n_epoch,
+            checkpoint_every_n_epochs=args.checkpoint_every_n_epochs,
         )
 
 

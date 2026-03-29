@@ -11,6 +11,7 @@ from typing import Dict, Iterable, List
 
 import numpy as np
 import pytorch_lightning as pl
+from pytorch_lightning.callbacks import ModelCheckpoint
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
@@ -92,14 +93,20 @@ def run_trial(
     test_data = TestOpenKBPDataModule()
 
     accelerator, devices = get_lightning_accelerator()
+    checkpoint_callback = ModelCheckpoint(
+        dirpath=str(trial_dir),
+        save_last=True,
+        every_n_epochs=max(1, args.checkpoint_every_n_epochs),
+        save_top_k=-1,
+    )
     trainer = pl.Trainer(
         devices=devices,
         accelerator=accelerator,
         max_epochs=args.max_epochs,
-        check_val_every_n_epoch=max(1, args.max_epochs),
+        check_val_every_n_epoch=max(1, args.check_val_every_n_epoch),
         logger=build_logger(run_name=f"dvh_tune_trial_{trial_id}"),
         default_root_dir=str(trial_dir),
-        enable_checkpointing=False,
+        callbacks=[checkpoint_callback],
         enable_progress_bar=True,
     )
 
@@ -128,6 +135,18 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Grid-search DVH-oriented loss weights on validation set.")
     parser.add_argument("--output-root", default=str(Path(config.CHECKPOINT_RESULT_DIR) / "dvh_tuning"))
     parser.add_argument("--max-epochs", type=int, default=30)
+    parser.add_argument(
+        "--check-val-every-n-epoch",
+        type=int,
+        default=None,
+        help="Validation/test cadence during fit. Defaults to max-epochs (validate once at the end).",
+    )
+    parser.add_argument(
+        "--checkpoint-every-n-epochs",
+        type=int,
+        default=10,
+        help="How often to save epoch checkpoints inside each trial directory.",
+    )
     parser.add_argument("--dose-weight", type=float, default=0.5)
     parser.add_argument("--cleanup-trials", action="store_true")
     parser.add_argument("--freeze", action="store_true", default=True)
@@ -146,6 +165,8 @@ def main() -> None:
     parser.add_argument("--hotspot-quantiles", default="0.975,0.98,0.99")
     parser.add_argument("--coldspot-quantiles", default="0.05,0.10,0.15")
     args = parser.parse_args()
+    if args.check_val_every_n_epoch is None:
+        args.check_val_every_n_epoch = max(1, args.max_epochs)
 
     os.makedirs(args.output_root, exist_ok=True)
     results: List[Dict[str, float]] = []

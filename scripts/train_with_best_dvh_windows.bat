@@ -13,6 +13,8 @@ if "%DOSE_PREDICTION_CACHE_RATE%"=="" set DOSE_PREDICTION_CACHE_RATE=0.0
 if "%DOSE_PREDICTION_TRAIN_DIR%"=="" set DOSE_PREDICTION_TRAIN_DIR=provided-data/nifti-train-pats/pt_*
 if "%DOSE_PREDICTION_VAL_DIR%"=="" set DOSE_PREDICTION_VAL_DIR=provided-data/nifti-val-pats/pt_*
 if "%DOSE_PREDICTION_TEST_DIR%"=="" set DOSE_PREDICTION_TEST_DIR=provided-data/nifti-test-pats/pt_*
+if "%DOSE_PREDICTION_CHECK_VAL_EVERY_N_EPOCH%"=="" set DOSE_PREDICTION_CHECK_VAL_EVERY_N_EPOCH=100
+if "%DOSE_PREDICTION_CHECKPOINT_EVERY_N_EPOCHS%"=="" set DOSE_PREDICTION_CHECKPOINT_EVERY_N_EPOCHS=10
 
 if not exist runs\DosePrediction\dvh_tuning_stage2\dvh_tuning_results.json (
   echo [INFO] Missing runs\DosePrediction\dvh_tuning_stage2\dvh_tuning_results.json
@@ -25,6 +27,8 @@ python scripts/train_with_best_dvh.py ^
   --best-json runs/DosePrediction/dvh_tuning_stage2/dvh_tuning_results.json ^
   --freeze-epochs 300 ^
   --finetune-epochs 120 ^
+  --check-val-every-n-epoch %DOSE_PREDICTION_CHECK_VAL_EVERY_N_EPOCH% ^
+  --checkpoint-every-n-epochs %DOSE_PREDICTION_CHECKPOINT_EVERY_N_EPOCHS% ^
   --resume ^
   --output-dir runs/DosePrediction/final_from_best_dvh
 
