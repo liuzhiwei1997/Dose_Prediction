@@ -98,6 +98,7 @@ def run_trial(
         save_last=True,
         every_n_epochs=max(1, args.checkpoint_every_n_epochs),
         save_top_k=-1,
+        save_on_train_epoch_end=True,
     )
     trainer = pl.Trainer(
         devices=devices,
