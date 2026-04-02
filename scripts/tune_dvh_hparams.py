@@ -71,6 +71,38 @@ def get_trial_grid(args: argparse.Namespace) -> Iterable[Dict[str, float]]:
         }
 
 
+def progress_file(output_root: str) -> Path:
+    return Path(output_root) / "dvh_tuning_progress.json"
+
+
+def summary_file(output_root: str) -> Path:
+    return Path(output_root) / "dvh_tuning_results.json"
+
+
+def load_progress(output_root: str) -> Dict[str, Dict[str, float]]:
+    path = progress_file(output_root)
+    if not path.exists():
+        return {}
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    results = payload.get("all_results", [])
+    return {str(r["trial_id"]): r for r in results if "trial_id" in r}
+
+
+def save_progress(output_root: str, results: Dict[str, Dict[str, float]]) -> None:
+    ordered = [results[k] for k in sorted(results.keys(), key=lambda x: int(x))]
+    if not ordered:
+        return
+    ranked = sorted(ordered, key=lambda x: x["objective"])
+    payload = {
+        "best": ranked[0],
+        "all_results": ranked,
+        "completed_trials": len(ordered),
+    }
+    progress_path = progress_file(output_root)
+    progress_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    summary_file(output_root).write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+
 def run_trial(
         trial_id: int,
         trial_cfg: Dict[str, float],
@@ -98,6 +130,7 @@ def run_trial(
         save_last=True,
         every_n_epochs=max(1, args.checkpoint_every_n_epochs),
         save_top_k=-1,
+        save_on_train_epoch_end=True,
     )
     trainer = pl.Trainer(
         devices=devices,
@@ -109,8 +142,11 @@ def run_trial(
         callbacks=[checkpoint_callback],
         enable_progress_bar=True,
     )
-
-    trainer.fit(model, datamodule=train_val_data)
+    last_ckpt = trial_dir / "last.ckpt"
+    resume_ckpt = str(last_ckpt) if (args.resume_trials and last_ckpt.exists()) else None
+    if resume_ckpt:
+        print(f"[INFO] Trial {trial_id}: resuming from {resume_ckpt}")
+    trainer.fit(model, datamodule=train_val_data, ckpt_path=resume_ckpt)
     trainer.test(model, datamodule=test_data)
 
     dose_score = float(np.mean(model.list_dose_metric))
@@ -119,6 +155,7 @@ def run_trial(
 
     objective = dvh_score + args.dose_weight * dose_score
     result = {
+        "trial_id": trial_id,
         **trial_cfg,
         "dose_score": dose_score,
         "dvh_score": dvh_score,
@@ -148,6 +185,23 @@ def main() -> None:
         help="How often to save epoch checkpoints inside each trial directory.",
     )
     parser.add_argument("--dose-weight", type=float, default=0.5)
+    parser.add_argument(
+        "--max-trials",
+        type=int,
+        default=None,
+        help="Limit number of grid trials (e.g., 20).",
+    )
+    parser.add_argument(
+        "--resume-trials",
+        action="store_true",
+        default=True,
+        help="Resume interrupted trial from <trial_dir>/last.ckpt when available.",
+    )
+    parser.add_argument(
+        "--no-resume-trials",
+        dest="resume_trials",
+        action="store_false",
+    )
     parser.add_argument("--cleanup-trials", action="store_true")
     parser.add_argument("--freeze", action="store_true", default=True)
     parser.add_argument("--no-freeze", dest="freeze", action="store_false")
@@ -169,21 +223,38 @@ def main() -> None:
         args.check_val_every_n_epoch = max(1, args.max_epochs)
 
     os.makedirs(args.output_root, exist_ok=True)
-    results: List[Dict[str, float]] = []
+    existing = load_progress(args.output_root)
+    if existing:
+        print(f"[INFO] Found {len(existing)} completed trial(s), will skip them.")
+    results: Dict[str, Dict[str, float]] = dict(existing)
 
-    for idx, trial_cfg in enumerate(get_trial_grid(args), start=1):
+    grid = list(get_trial_grid(args))
+    if args.max_trials is not None:
+        if args.max_trials <= 0:
+            raise ValueError("--max-trials must be > 0")
+        grid = grid[:args.max_trials]
+
+    for idx, trial_cfg in enumerate(grid, start=1):
+        if str(idx) in results:
+            print(f"[INFO] Skip completed Trial {idx}")
+            continue
         print(f"\n=== Trial {idx}: {trial_cfg} ===")
         result = run_trial(idx, trial_cfg, args)
-        results.append(result)
+        results[str(idx)] = result
+        save_progress(args.output_root, results)
         print(
             f"objective={result['objective']:.4f}, dose={result['dose_score']:.4f}, "
             f"dvh={result['dvh_score']:.4f}, D0.1cc={result['mae_D_0.1_cc']:.4f}, D99={result['mae_D99']:.4f}"
         )
 
-    results = sorted(results, key=lambda x: x["objective"])
-    best = results[0]
-    summary_path = Path(args.output_root) / "dvh_tuning_results.json"
-    summary_path.write_text(json.dumps({"best": best, "all_results": results}, indent=2), encoding="utf-8")
+    if not results:
+        raise RuntimeError("No trials were executed. Check your grid/max-trials settings.")
+
+    ordered_results = [results[k] for k in sorted(results.keys(), key=lambda x: int(x))]
+    ranked_results = sorted(ordered_results, key=lambda x: x["objective"])
+    best = ranked_results[0]
+    summary_path = summary_file(args.output_root)
+    summary_path.write_text(json.dumps({"best": best, "all_results": ranked_results}, indent=2), encoding="utf-8")
 
     print("\nBest config:")
     print(json.dumps(best, indent=2))

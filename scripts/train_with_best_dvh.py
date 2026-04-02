@@ -98,6 +98,7 @@ def run_training(
         save_last=True,
         every_n_epochs=max(1, checkpoint_every_n_epochs),
         save_top_k=-1,
+        save_on_train_epoch_end=True,
     )
     last_ckpt = ckpt_dir / "last.ckpt"
     resume_ckpt = str(last_ckpt) if (resume and last_ckpt.exists()) else None
