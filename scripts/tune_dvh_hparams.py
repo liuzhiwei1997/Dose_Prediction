@@ -97,10 +97,19 @@ def save_progress(output_root: str, results: Dict[str, Dict[str, float]]) -> Non
         "best": ranked[0],
         "all_results": ranked,
         "completed_trials": len(ordered),
+        "best_trial_id": ranked[0].get("trial_id"),
     }
     progress_path = progress_file(output_root)
     progress_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
     summary_file(output_root).write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+
+def prune_non_best_trial_dirs(output_root: str, best_trial_id: int | str) -> None:
+    root = Path(output_root)
+    keep_dir = f"trial_{int(best_trial_id):03d}"
+    for trial_dir in root.glob("trial_*"):
+        if trial_dir.name != keep_dir and trial_dir.is_dir():
+            shutil.rmtree(trial_dir, ignore_errors=True)
 
 
 def run_trial(
@@ -203,6 +212,11 @@ def main() -> None:
         action="store_false",
     )
     parser.add_argument("--cleanup-trials", action="store_true")
+    parser.add_argument(
+        "--keep-only-best-trial",
+        action="store_true",
+        help="Delete non-best trial_* checkpoint folders to save disk during/after tuning.",
+    )
     parser.add_argument("--freeze", action="store_true", default=True)
     parser.add_argument("--no-freeze", dest="freeze", action="store_false")
 
@@ -227,6 +241,9 @@ def main() -> None:
     if existing:
         print(f"[INFO] Found {len(existing)} completed trial(s), will skip them.")
     results: Dict[str, Dict[str, float]] = dict(existing)
+    if args.keep_only_best_trial and results:
+        current_best = min(results.values(), key=lambda x: x["objective"])
+        prune_non_best_trial_dirs(args.output_root, current_best["trial_id"])
 
     grid = list(get_trial_grid(args))
     if args.max_trials is not None:
@@ -242,6 +259,9 @@ def main() -> None:
         result = run_trial(idx, trial_cfg, args)
         results[str(idx)] = result
         save_progress(args.output_root, results)
+        if args.keep_only_best_trial:
+            current_best = min(results.values(), key=lambda x: x["objective"])
+            prune_non_best_trial_dirs(args.output_root, current_best["trial_id"])
         print(
             f"objective={result['objective']:.4f}, dose={result['dose_score']:.4f}, "
             f"dvh={result['dvh_score']:.4f}, D0.1cc={result['mae_D_0.1_cc']:.4f}, D99={result['mae_D99']:.4f}"
@@ -255,6 +275,8 @@ def main() -> None:
     best = ranked_results[0]
     summary_path = summary_file(args.output_root)
     summary_path.write_text(json.dumps({"best": best, "all_results": ranked_results}, indent=2), encoding="utf-8")
+    if args.keep_only_best_trial:
+        prune_non_best_trial_dirs(args.output_root, best["trial_id"])
 
     print("\nBest config:")
     print(json.dumps(best, indent=2))
