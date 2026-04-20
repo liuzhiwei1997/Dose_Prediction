@@ -87,6 +87,7 @@ def run_training(
         resume: bool,
         check_val_every_n_epoch: int,
         checkpoint_every_n_epochs: int,
+        checkpoint_top_k: int,
 ) -> None:
     data = OpenKBPDataModule()
     model = Pyfer(model_cfg, freeze=freeze)
@@ -97,7 +98,7 @@ def run_training(
         dirpath=str(ckpt_dir),
         save_last=True,
         every_n_epochs=max(1, checkpoint_every_n_epochs),
-        save_top_k=-1,
+        save_top_k=checkpoint_top_k,
         save_on_train_epoch_end=True,
     )
     last_ckpt = ckpt_dir / "last.ckpt"
@@ -143,6 +144,12 @@ def main() -> None:
         default=5,
         help="Save epoch checkpoints every N epochs.",
     )
+    parser.add_argument(
+        "--checkpoint-top-k",
+        type=int,
+        default=1,
+        help="How many periodic checkpoints to keep (-1 keeps all and uses more disk).",
+    )
     args = parser.parse_args()
 
     os.makedirs(args.output_dir, exist_ok=True)
@@ -170,6 +177,7 @@ def main() -> None:
         resume=args.resume,
         check_val_every_n_epoch=args.check_val_every_n_epoch,
         checkpoint_every_n_epochs=args.checkpoint_every_n_epochs,
+        checkpoint_top_k=args.checkpoint_top_k,
     )
 
     if not args.skip_finetune:
@@ -182,6 +190,7 @@ def main() -> None:
             resume=args.resume,
             check_val_every_n_epoch=args.check_val_every_n_epoch,
             checkpoint_every_n_epochs=args.checkpoint_every_n_epochs,
+            checkpoint_top_k=args.checkpoint_top_k,
         )
 
 

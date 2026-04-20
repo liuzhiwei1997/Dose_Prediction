@@ -138,7 +138,7 @@ def run_trial(
         dirpath=str(trial_dir),
         save_last=True,
         every_n_epochs=max(1, args.checkpoint_every_n_epochs),
-        save_top_k=-1,
+        save_top_k=args.checkpoint_top_k,
         save_on_train_epoch_end=True,
     )
     trainer = pl.Trainer(
@@ -192,6 +192,12 @@ def main() -> None:
         type=int,
         default=10,
         help="How often to save epoch checkpoints inside each trial directory.",
+    )
+    parser.add_argument(
+        "--checkpoint-top-k",
+        type=int,
+        default=1,
+        help="How many periodic checkpoints to keep per trial (-1 keeps all and uses more disk).",
     )
     parser.add_argument("--dose-weight", type=float, default=0.5)
     parser.add_argument(
