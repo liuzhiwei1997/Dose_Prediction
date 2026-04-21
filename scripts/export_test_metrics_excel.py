@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import importlib.util
 import json
 import os
 import sys
@@ -129,6 +130,105 @@ def summarize_structures(per_patient: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+def build_raw_long_table(per_patient_metrics: dict[str, dict[str, Any]]) -> pd.DataFrame:
+    rows: list[dict[str, Any]] = []
+    for patient, metric_map in per_patient_metrics.items():
+        for metric_name, metric_value in metric_map.items():
+            rows.append(
+                {
+                    "patient": patient,
+                    "metric_name": metric_name,
+                    "metric_value": metric_value,
+                }
+            )
+    return pd.DataFrame(rows, columns=["patient", "metric_name", "metric_value"])
+
+
+def build_pred_gt_pairs_table(per_patient_metrics: dict[str, dict[str, Any]]) -> pd.DataFrame:
+    rows: list[dict[str, Any]] = []
+    for patient, metric_map in per_patient_metrics.items():
+        visited: set[str] = set()
+        for key, pred_value in metric_map.items():
+            if not key.startswith("pre"):
+                continue
+            metric_stub = key[3:]
+            gt_key = f"gt_{metric_stub}"
+            if gt_key not in metric_map:
+                continue
+            if key in visited or gt_key in visited:
+                continue
+            gt_value = metric_map[gt_key]
+            abs_diff = abs(float(pred_value) - float(gt_value))
+            rows.append(
+                {
+                    "patient": patient,
+                    "metric_stub": metric_stub,
+                    "pred_key": key,
+                    "pred_value": pred_value,
+                    "gt_key": gt_key,
+                    "gt_value": gt_value,
+                    "abs_diff": abs_diff,
+                }
+            )
+            visited.add(key)
+            visited.add(gt_key)
+    return pd.DataFrame(
+        rows,
+        columns=["patient", "metric_stub", "pred_key", "pred_value", "gt_key", "gt_value", "abs_diff"],
+    )
+
+
+@contextlib.contextmanager
+def maybe_silence_output(enabled: bool):
+    if not enabled:
+        yield
+        return
+
+    with open(os.devnull, "w", encoding="utf-8") as devnull:
+        with contextlib.redirect_stdout(devnull), contextlib.redirect_stderr(devnull):
+            yield
+
+
+def get_excel_engine() -> str | None:
+    if importlib.util.find_spec("openpyxl") is not None:
+        return "openpyxl"
+    if importlib.util.find_spec("xlsxwriter") is not None:
+        return "xlsxwriter"
+    return None
+
+
+def write_outputs(
+    output_path: Path,
+    summary: pd.DataFrame,
+    per_patient: pd.DataFrame,
+    structure_summary: pd.DataFrame,
+    raw_long: pd.DataFrame,
+    pred_gt_pairs: pd.DataFrame,
+) -> tuple[str, list[Path]]:
+    engine = get_excel_engine()
+    if output_path.suffix.lower() == ".xlsx" and engine is not None:
+        with pd.ExcelWriter(output_path, engine=engine) as writer:
+            summary.to_excel(writer, sheet_name="summary", index=False)
+            per_patient.to_excel(writer, sheet_name="per_patient", index=False)
+            structure_summary.to_excel(writer, sheet_name="metric_stats", index=False)
+            raw_long.to_excel(writer, sheet_name="raw_long", index=False)
+            pred_gt_pairs.to_excel(writer, sheet_name="pred_gt_pairs", index=False)
+        return "xlsx", [output_path]
+
+    base = output_path.with_suffix("")
+    summary_csv = base.with_name(f"{base.name}_summary.csv")
+    per_patient_csv = base.with_name(f"{base.name}_per_patient.csv")
+    metric_stats_csv = base.with_name(f"{base.name}_metric_stats.csv")
+    raw_long_csv = base.with_name(f"{base.name}_raw_long.csv")
+    pred_gt_pairs_csv = base.with_name(f"{base.name}_pred_gt_pairs.csv")
+    summary.to_csv(summary_csv, index=False, encoding="utf-8-sig")
+    per_patient.to_csv(per_patient_csv, index=False, encoding="utf-8-sig")
+    structure_summary.to_csv(metric_stats_csv, index=False, encoding="utf-8-sig")
+    raw_long.to_csv(raw_long_csv, index=False, encoding="utf-8-sig")
+    pred_gt_pairs.to_csv(pred_gt_pairs_csv, index=False, encoding="utf-8-sig")
+    return "csv", [summary_csv, per_patient_csv, metric_stats_csv, raw_long_csv, pred_gt_pairs_csv]
+
+
 def main() -> None:
     args = parse_args()
 
@@ -138,28 +238,26 @@ def main() -> None:
     output_path = resolve_path(args.output_xlsx)
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
-    model = resolve_model(checkpoint_path, best_payload)
-    data = TestOpenKBPDataModule()
+    with maybe_silence_output(enabled=not args.show_progress):
+        model = resolve_model(checkpoint_path, best_payload)
+        data = TestOpenKBPDataModule()
 
-    accelerator, devices = get_lightning_accelerator()
-    trainer = pl.Trainer(
-        accelerator=accelerator,
-        devices=devices,
-        logger=False,
-        enable_checkpointing=False,
-        enable_progress_bar=args.show_progress,
-    )
-
-    if args.show_progress:
+        accelerator, devices = get_lightning_accelerator()
+        trainer = pl.Trainer(
+            accelerator=accelerator,
+            devices=devices,
+            logger=False,
+            enable_checkpointing=False,
+            enable_progress_bar=args.show_progress,
+        )
         trainer.test(model, datamodule=data)
-    else:
-        with open(os.devnull, "w", encoding="utf-8") as devnull:
-            with contextlib.redirect_stdout(devnull), contextlib.redirect_stderr(devnull):
-                trainer.test(model, datamodule=data)
 
-    per_patient = pd.DataFrame.from_dict(model.dict_DVH_dif, orient="index")
+    per_patient_metrics = model.dict_DVH_dif
+    per_patient = pd.DataFrame.from_dict(per_patient_metrics, orient="index")
     per_patient.index.name = "patient"
     per_patient = per_patient.reset_index()
+    raw_long = build_raw_long_table(per_patient_metrics)
+    pred_gt_pairs = build_pred_gt_pairs_table(per_patient_metrics)
 
     mean_dose = float(np.mean(model.list_dose_metric)) if model.list_dose_metric else float("nan")
     mean_dvh = float(np.mean(model.list_DVH_dif)) if model.list_DVH_dif else float("nan")
@@ -178,12 +276,20 @@ def main() -> None:
 
     structure_summary = summarize_structures(per_patient)
 
-    with pd.ExcelWriter(output_path, engine="openpyxl") as writer:
-        summary.to_excel(writer, sheet_name="summary", index=False)
-        per_patient.to_excel(writer, sheet_name="per_patient", index=False)
-        structure_summary.to_excel(writer, sheet_name="metric_stats", index=False)
-
-    print(f"Excel generated: {output_path}")
+    output_kind, output_files = write_outputs(
+        output_path,
+        summary,
+        per_patient,
+        structure_summary,
+        raw_long,
+        pred_gt_pairs,
+    )
+    if output_kind == "xlsx":
+        print(f"Excel generated: {output_files[0]}")
+    else:
+        print("[WARN] openpyxl/xlsxwriter not found; exported CSV files instead:")
+        for file in output_files:
+            print(f"  - {file}")
     print(summary.to_string(index=False))
 
 
